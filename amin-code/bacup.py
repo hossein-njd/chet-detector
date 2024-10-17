@@ -2,6 +2,7 @@ import cv2
 import dlib
 import numpy as np
 
+
 # Load the pre-trained shape predictor model
 PREDICTOR_PATH = '/home/amir-agho/programing/chet-detector/amin-code/shape_predictor_68_face_landmarks.dat'
 detector = dlib.get_frontal_face_detector()
@@ -114,3 +115,6 @@ while True:
 # Release the camera and close windows
 cap.release()
 cv2.destroyAllWindows()
+
+
+
