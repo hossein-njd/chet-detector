@@ -8,7 +8,7 @@ PREDICTOR_PATH = '/home/amir-agho/programing/chet-detector/amin-code/shape_predi
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor(PREDICTOR_PATH)
 
-API_URL = "http://127.0.0.1:5000"  # آدرس API که می‌خواهید به آن درخواست ارسال کنید
+API_URL = "https://sngh4sn7-3000.euw.devtunnels.ms/api/direction"  # آدرس API که می‌خواهید به آن درخواست ارسال کنید
 
 # Function to calculate the midpoint between two points
 def midpoint(p1, p2):
