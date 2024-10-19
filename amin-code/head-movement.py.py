@@ -1,44 +1,31 @@
 import cv2
 import dlib
 import numpy as np
-import requests
 import time  # برای مدیریت تایمر
+from send_data import send_head_movement_to_api  # وارد کردن فانکشن از برنامه 2
 
 # Load the pre-trained shape predictor model
 PREDICTOR_PATH = '/home/amir-agho/programing/chet-detector/amin-code/shape_predictor_68_face_landmarks.dat'
 detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor(PREDICTOR_PATH)
 
-API_URL = "https://sngh4sn7-3000.euw.devtunnels.ms/api/direction"  # آدرس API که می‌خواهید به آن درخواست ارسال کنید
-
 # Variable to track previous head movement direction and last API request time
 previous_head_movement = None
 last_api_call_time = 0
 api_call_interval = 2  # حداقل فاصله زمانی بین درخواست‌های API به ثانیه
 
+# دیکشنری برای ذخیره تایمر هر جهت
+head_movement_timers = {
+    "Head turned left": None,
+    "Head turned right": None,
+    "Head tilted down": None
+}
+
+head_movement_hold_time = 3  # حداقل مدت زمان برای ارسال پیام (۵ ثانیه)
+
 # Function to calculate the midpoint between two points
 def midpoint(p1, p2):
     return int((p1.x + p2.x) / 2), int((p1.y + p2.y) / 2)
-
-# Function to send head movement data to API
-def send_head_movement_to_api(direction):
-    global last_api_call_time
-    current_time = time.time()
-
-    # Check if enough time has passed since the last API call
-    if current_time - last_api_call_time >= api_call_interval:
-        data = {'direction': direction}
-        try:
-            response = requests.post(API_URL, json=data)
-            if response.status_code == 200:
-                print(f"Successfully sent {direction} to API")
-            else:
-                print(f"Failed to send {direction} to API, status code: {response.status_code}")
-        except requests.exceptions.RequestException as e:
-            print(f"Error sending data to API: {e}")
-
-        # Update the last API call time
-        last_api_call_time = current_time
 
 # Function to detect head movement in 4 directions
 def detect_head_movement(frame):
@@ -76,13 +63,19 @@ def detect_head_movement(frame):
         elif abs(nose_offset_y) > eye_distance_x * 0.55:  # Adjust sensitivity for up/down movement
             if nose_offset_y > 0:
                 head_movement = "Head tilted down"
-            else:
-                head_movement = "Head tilted up"
 
         # Check if the head movement direction has changed
-        if head_movement != previous_head_movement:
-            send_head_movement_to_api(head_movement)  # ارسال به API
-            previous_head_movement = head_movement  # Update previous movement
+        if head_movement in head_movement_timers:
+            # اگر حرکت سر جدید است، تایمر شروع می‌شود
+            if previous_head_movement != head_movement:
+                head_movement_timers[head_movement] = time.time()  # شروع تایمر
+            else:
+                # اگر سر هنوز در همان جهت است، مدت زمان ماندن را محاسبه کن
+                if time.time() - head_movement_timers[head_movement] > head_movement_hold_time:
+                    send_head_movement_to_api(head_movement)  # ارسال به API
+                    head_movement_timers[head_movement] = time.time()  # ریست تایمر بعد از ارسال پیام
+
+        previous_head_movement = head_movement  # Update previous movement
 
         # Display the head movement on the frame
         cv2.putText(frame, head_movement, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
