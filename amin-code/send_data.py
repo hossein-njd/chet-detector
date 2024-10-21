@@ -13,7 +13,7 @@ def send_head_movement_to_api(direction):
         else:
             print(f"Failed to send {direction} to API, status code: {response.status_code}")
     except requests.exceptions.RequestException as e:
-        print(f"Error sending data to API: {e}")
+        print(f"Error sending data to API: {e}" , "chit detected")
 
 # send_head_movement_to_api("xxxdsdsdsss");
 

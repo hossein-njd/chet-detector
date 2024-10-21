@@ -21,7 +21,7 @@ head_movement_timers = {
     "Head tilted down": None
 }
 
-head_movement_hold_time = 3  # حداقل مدت زمان برای ارسال پیام (۵ ثانیه)
+head_movement_hold_time = 3  #  3 ثانیه تنظیم شده (api) حداقل مدت زمان برای ارسال پیام (۵ ثانیه) که به دلیل دیلی در  
 
 # Function to calculate the midpoint between two points
 def midpoint(p1, p2):
