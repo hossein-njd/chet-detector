@@ -1,8 +1,8 @@
 import cv2
 import dlib
 import numpy as np
-import time  # برای مدیریت تایمر
-from send_data import send_head_movement_to_api  # وارد کردن فانکشن از برنامه 2
+import time
+import requests
 
 # Load the pre-trained shape predictor model
 PREDICTOR_PATH = '/home/amir-agho/programing/chet-detector/amin-code/shape_predictor_68_face_landmarks.dat'
@@ -21,7 +21,21 @@ head_movement_timers = {
     "Head tilted down": None
 }
 
-head_movement_hold_time = 3  #  3 ثانیه تنظیم شده (api) حداقل مدت زمان برای ارسال پیام (۵ ثانیه) که به دلیل دیلی در  
+head_movement_hold_time = 3  # حداقل مدت زمان برای ارسال پیام
+
+url = 'https://sngh4sn7-3000.euw.devtunnels.ms/api/direction'
+
+# Function to send head movement to API
+def send_head_movement_to_api(direction):
+    data = {'direction': direction}
+    try:
+        response = requests.post(url, json=data)
+        if response.status_code == 200:
+            print(f"Successfully sent {direction} to API")
+        else:
+            print(f"Failed to send {direction} to API, status code: {response.status_code}")
+    except requests.exceptions.RequestException as e:
+        print(f"Error sending data to API: {e}")
 
 # Function to calculate the midpoint between two points
 def midpoint(p1, p2):
@@ -100,19 +114,3 @@ while True:
 # Release the camera and close windows
 cap.release()
 cv2.destroyAllWindows()
-import requests
-import sys 
-url = 'https://sngh4sn7-3000.euw.devtunnels.ms/api/direction'
-
-
-
-def send_head_movement_to_api(direction):
-    data = {'direction': direction}
-    try:
-        response = requests.post(url, json=data)
-        if response.status_code == 200:
-            print(f"Successfully sent {direction} to API")
-        else:
-            print(f"Failed to send {direction} to API, status code: {response.status_code}")
-    except requests.exceptions.RequestException as e:
-        print(f"Error sending data to API: {e}" , "chit detected")
