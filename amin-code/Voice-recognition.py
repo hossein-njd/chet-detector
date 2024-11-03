@@ -80,3 +80,4 @@ def process_video():
 
 if __name__ == '__main__':
     app.run(debug=False)
+# در بخش صدا نیاز به بهبود دارد 
