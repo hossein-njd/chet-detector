@@ -1,83 +1,63 @@
-from flask import Flask, request, jsonify
-import os
+##  در اینجا برنامه‌ای بر اساس ویژگی‌هایی که توضیح داده‌اید، نوشته‌ام. این برنامه از WebSocket برای دریافت داده‌ها و مقایسه اثر انگشت‌ها استفاده می‌کند.
+
 import cv2
 import face_recognition
-from moviepy.editor import VideoFileClip
-import librosa
 import numpy as np
+import librosa
+from fastapi import FastAPI, WebSocket
+from scipy.spatial.distance import cosine
 
-app = Flask(__name__)
+app = FastAPI()
 
-UPLOAD_FOLDER = 'uploads'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+# فرض کنید اینها اثر انگشت‌های ذخیره‌شده چهره و صوتی هستند.
+# در واقع، این‌ها باید از یک پایگاه داده یا فایل‌های ذخیره‌شده خوانده شوند.
+stored_face_fingerprint = np.random.rand(128)  # اثر انگشت چهره ذخیره‌شده (برای مثال)
+stored_audio_fingerprint = np.random.rand(13)  # اثر انگشت صوتی ذخیره‌شده (برای مثال)
 
-def extract_face_encodings(video_path):
-    try:
-        cap = cv2.VideoCapture(video_path)
-        face_encodings_list = []
-        
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            face_locations = face_recognition.face_locations(frame)
-            face_encodings = face_recognition.face_encodings(frame, face_locations)
-            if face_encodings:
-                face_encodings_list.append(face_encodings[0])
-        
-        cap.release()
-        if face_encodings_list:
-            return np.mean(face_encodings_list, axis=0).tolist()
+# تابع برای مقایسه اثر انگشت‌های چهره
+def compare_face_fingerprints(received_face_fingerprint):
+    similarity = 1 - cosine(stored_face_fingerprint, received_face_fingerprint)
+    return similarity
+
+# تابع برای مقایسه اثر انگشت‌های صوتی
+def compare_audio_fingerprints(received_audio_fingerprint):
+    if received_audio_fingerprint is None:
         return None
-    except Exception as e:
-        print("Error in extracting face encodings:", e)
-        return None
+    similarity = 1 - cosine(stored_audio_fingerprint, received_audio_fingerprint)
+    return similarity
 
-def extract_audio_fingerprint(video_path, audio_path='user_audio.wav'):
-    try:
-        video = VideoFileClip(video_path)
-        video.audio.write_audiofile(audio_path)
+# WebSocket برای دریافت داده‌ها از فرانت‌اند
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
 
-        y, sr = librosa.load(audio_path)
-        mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
-        audio_fingerprint = np.mean(mfccs, axis=1)
-        
-        os.remove(audio_path)
-        return audio_fingerprint.tolist()
-    except Exception as e:
-        print("Error in extracting audio fingerprint:", e)
-        return None
+    while True:
+        # دریافت داده‌ها از فرانت‌اند (اثر انگشت چهره و صوتی به صورت باینری)
+        data = await websocket.receive_text()  # دریافت داده‌ها از فرانت‌اند
 
-@app.route('/process_video', methods=['POST'])
-def process_video():
-    try:
-        if 'file' not in request.files:
-            return jsonify({'error': 'No file part provided'}), 400
-        
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({'error': 'No file selected'}), 400
-        
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-        file.save(file_path)
+        # فرض کنید داده‌ها به فرمت JSON ارسال می‌شوند
+        try:
+            import json
+            data = json.loads(data)
+            received_face_fingerprint = np.array(data['face_fingerprint'])
+            received_audio_fingerprint = np.array(data.get('audio_fingerprint', None))  # None اگر صوتی نباشد
+        except Exception as e:
+            print(f"Error in receiving data: {e}")
+            continue
 
-        face_fingerprint = extract_face_encodings(file_path)
-        audio_fingerprint = extract_audio_fingerprint(file_path)
+        # مقایسه اثر انگشت چهره
+        face_similarity = compare_face_fingerprints(received_face_fingerprint)
+        if face_similarity < 0.9:
+            await websocket.send_text("هشدار: اثر انگشت چهره تطابق کمتری دارد.")
 
-        os.remove(file_path)
+        # مقایسه اثر انگشت صوتی
+        if received_audio_fingerprint is None:
+            await websocket.send_text("هشدار: اثر انگشت صوتی خالی است.")
+        else:
+            audio_similarity = compare_audio_fingerprints(received_audio_fingerprint)
+            if audio_similarity < 0.7:
+                await websocket.send_text("هشدار: اثر انگشت صوتی تطابق کمتری دارد.")
 
-        output = {
-            "face_fingerprint": face_fingerprint,
-            "audio_fingerprint": audio_fingerprint
-        }
-        
-        return jsonify(output), 200
-    except Exception as e:
-        print("Internal server error:", e)
-        return jsonify({'error': 'An error occurred while processing the video'}), 500
-
-if __name__ == '__main__':
-    app.run(debug=False)
-# در بخش صدا نیاز به بهبود دارد 
+        # مکث کوچک برای جلوگیری از ارسال داده‌های مکرر در هر دور
+        await websocket.send_text("بررسی انجام شد.")
+## این برنامه هنوز تست نشده

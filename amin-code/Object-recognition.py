@@ -1,56 +1,54 @@
+##  این برنامه درست شده تا فیلمی که از سمت فرانت به صورت زنده دارد فرستاده میشود برسی کند و بفهمد که در تصویر فقط یک نفر باشد و در تصور وایت برد و گوشی و کاغذ نباشد
+from fastapi import FastAPI, WebSocket
 import cv2
 from ultralytics import YOLO
-import requests
+import asyncio
 
-# آدرس API
-API_URL = 'https://sngh4sn7-3000.euw.devtunnels.ms/api/direction'  # آدرس API 
-# تابع ارسال هشدار به API
-def alert_api(object_name):
-    payload = {'object': object_name}
-    try:
-        response = requests.post(API_URL, json=payload)
-        response.raise_for_status()
-        print(f"Alert sent for {object_name}: {response.status_code}")
-    except requests.exceptions.RequestException as e:
-        print(f"Error sending alert for {object_name}: {e}")
+app = FastAPI()
+model = YOLO("yolov8n.pt")  # از مدل پایه YOLOv8 استفاده می‌کنیم
 
-# بارگذاری مدل YOLO نسخه 8
-model = YOLO('yolov8n.pt')  # مدل YOLOv8، مطمئن شوید فایل مدل در مسیر درست است
-
-# لیست کلاس‌های مورد نظر
-target_classes = ["cell phone", "paper"]
-
-# ویدئو
-cap = cv2.VideoCapture(0)
-
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
-
-    # انجام تشخیص با مدل YOLO
+# تابع پردازش ویدیو
+async def process_frame(frame):
     results = model(frame)
+    
+    # دریافت لیست برچسب‌ها از نتایج
+    labels = [model.names[int(box[5])] for box in results[0].boxes.data]
+    
+    # بررسی وجود بیش از یک نفر
+    people_count = labels.count('person')
+    alert_people = people_count > 1
 
-    # بررسی و ارسال هشدار در صورت شناسایی اشیاء هدف
-    for result in results:
-        boxes = result.boxes  # جعبه‌های تشخیص داده‌شده
-        for box in boxes:
-            label = result.names[int(box.cls)]  # نام کلاس
-            confidence = box.conf[0]  # اعتماد
+    # بررسی وجود اشیاء خاص
+    alert_phone = 'cell phone' in labels
+    alert_whiteboard = 'whiteboard' in labels
+    alert_paper = 'paper' in labels
 
-            if confidence > 0.5 and label in target_classes:  # آستانه اعتماد و کلاس‌های هدف
-                # ارسال هشدار به API
-                alert_api(label)
+    return alert_people, alert_phone, alert_whiteboard, alert_paper
 
-                # رسم مستطیل و متن برای شیء شناسایی‌شده
-                x1, y1, x2, y2 = map(int, box.xyxy[0])  # مختصات جعبه
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    
+    while True:
+        data = await websocket.receive_bytes()  # دریافت فریم ویدیویی از فرانت‌اند
+        frame = cv2.imdecode(data, cv2.IMREAD_COLOR)  # تبدیل بایت‌ها به تصویر OpenCV
 
-    # نمایش فریم
-    cv2.imshow("Image", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+        # پردازش فریم و استخراج اطلاعات
+        alert_people, alert_phone, alert_whiteboard, alert_paper = await process_frame(frame)
 
-cap.release()
-cv2.destroyAllWindows()
+        # ارسال پیام‌ها به فرانت‌اند بر اساس شرایط مورد نظر
+        if alert_people:
+            await websocket.send_text("هشدار: بیش از یک نفر در تصویر وجود دارد")
+        if alert_phone:
+            await websocket.send_text("هشدار: گوشی در تصویر شناسایی شد")
+        if alert_whiteboard:
+            await websocket.send_text("هشدار: وایت‌برد در تصویر شناسایی شد")
+        if alert_paper:
+            await websocket.send_text("هشدار: کاغذ پر شده در تصویر شناسایی شد")
+
+        await asyncio.sleep(0.1)  # تنظیم فاصله زمانی بین پردازش‌ها
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+# این برنامه هنوز تست نشده
