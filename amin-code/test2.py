@@ -7,7 +7,7 @@ import numpy as np
 
 app = Flask(__name__)
 
-UPLOAD_FOLDER = 'uploads'  # پوشه برای ذخیره فایل‌ها
+UPLOAD_FOLDER = 'uploads'  # پوشه برای ذخیره فایل‌های ویدیو و صوت
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
@@ -76,12 +76,11 @@ def upload_video():
     os.remove(video_path)
 
     if not face_fingerprint:
-        return jsonify({'error': 'No face fingerprint found in the video'}), 400
+        return jsonify({'error': 'face_fingerprint not found'}), 400
 
-    # بازگشت اثر انگشت چهره به فرانت‌اند
+    # بازگشت نتایج به فرانت‌اند
     return jsonify({
-        'face_fingerprint': face_fingerprint,
-        'message': 'Face fingerprint successfully extracted.'
+        'face_fingerprint': face_fingerprint
     })
 
 # 4. مسیر API برای پردازش فایل صوتی
@@ -109,15 +108,8 @@ def upload_audio():
 
     # بازگشت اثر انگشت صوتی به فرانت‌اند
     return jsonify({
-        'audio_fingerprint': audio_fingerprint,
-        'message': 'Audio fingerprint successfully extracted.'
+        'audio_fingerprint': audio_fingerprint
     })
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
-
-
-###این برنامه برای تشخیص فرد و درست کردن یک امضا صوتی و تصویری از فرد هست
-### این برنامه از قسمت از سه قسمت 1 رودی 2 امضا تصوری 3 امضا صوتی تقسیم شده
-### این برنامه هنوز تست نشده
-### این برنامه برنامه اصلی هست و بر برنامه های تست2 و اندوجوال ایدنتیفایر اولیت داره
