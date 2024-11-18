@@ -1,101 +1,123 @@
 ###این برنامه برای تشخیص فرد و درست کردن یک امضا صوتی و تصویری از فرد هست
 ### این برنامه از قسمت از سه قسمت 1 رودی 2 امضا تصوری 3 امضا صوتی تقسیم شده
+from flask import Flask, request, jsonify
 import cv2
 import os
 import face_recognition
-from moviepy.editor import VideoFileClip
 import librosa
 import numpy as np
+import subprocess
 
-# 1. تابع برای ضبط ویدیو از صورت کاربر
-def record_video(video_path='user_video.avi'):
-    cap = cv2.VideoCapture(0)  # 0 برای دوربین پیش‌فرض
-    fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    out = cv2.VideoWriter(video_path, fourcc, 20.0, (640, 480))
+app = Flask(__name__)
 
-    print("Recording started. Press 'q' to stop.")
+UPLOAD_FOLDER = 'uploads'  # پوشه برای ذخیره فایل‌ها
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
 
-    while True:
-        ret, frame = cap.read()
-        if ret:
-            cv2.imshow('Recording', frame)  # نمایش ویدیو در حال ضبط
-            out.write(frame)  # ذخیره فریم در فایل ویدیو
+# 1. تابع برای استخراج صدا از ویدیو با استفاده از ffmpeg
+def extract_audio_from_video(video_path, audio_path):
+    try:
+        command = [
+            'ffmpeg', '-i', video_path, 
+            '-vn', '-acodec', 'pcm_s16le', 
+            '-ar', '44100', '-ac', '2', audio_path
+        ]
+        subprocess.run(command, check=True)
+        return audio_path
+    except Exception as e:
+        print(f"Error extracting audio using ffmpeg: {e}")
+        return None
 
-            if cv2.waitKey(1) & 0xFF == ord('q'):  # توقف با فشردن 'q'
-                break
-        else:
-            break
-
-    cap.release()  # آزادسازی دوربین
-    out.release()  # ذخیره ویدیو
-    cv2.destroyAllWindows()  # بستن پنجره‌ها
-    print(f"Recording saved as '{video_path}'")
-
-# 2. تابع برای تقسیم ویدیو به فریم‌ها و تشخیص چهره
-def extract_face_encodings(video_path='user_video.avi', output_frames_dir='frames'):
-    # ایجاد پوشه‌ای برای ذخیره فریم‌ها
-    if not os.path.exists(output_frames_dir):
-        os.makedirs(output_frames_dir)
-
-    cap = cv2.VideoCapture(video_path)  # باز کردن ویدیو
-    frame_count = 0  # شمارش فریم‌ها
-    face_encodings_list = []  # لیست برای ذخیره اثر انگشت‌های چهره
+# 2. تابع برای پردازش ویدیو و استخراج اثر انگشت چهره
+def extract_face_encodings(video_path):
+    cap = cv2.VideoCapture(video_path)
+    face_encodings_list = []
 
     while cap.isOpened():
         ret, frame = cap.read()
-        if not ret:  # در صورت اتمام ویدیو
+        if not ret:
             break
-
-        frame_path = os.path.join(output_frames_dir, f'frame_{frame_count}.jpg')  # مسیر ذخیره فریم
-        cv2.imwrite(frame_path, frame)  # ذخیره فریم
 
         # تشخیص چهره‌ها در فریم
         face_locations = face_recognition.face_locations(frame)
         face_encodings = face_recognition.face_encodings(frame, face_locations)
 
-        if face_encodings:  # اگر چهره‌ای شناسایی شد
-            face_encodings_list.append(face_encodings[0])  # ذخیره اثر انگشت چهره
-            print(f"Face detected in frame {frame_count}")
+        if face_encodings:
+            face_encodings_list.append(face_encodings[0])  # ذخیره اولین چهره شناسایی‌شده
 
-        frame_count += 1  # افزایش شمارش فریم
+    cap.release()
 
-    cap.release()  # آزادسازی ویدیو
-    print(f"Extracted {len(face_encodings_list)} face encodings from {frame_count} frames.")
-
-    # ایجاد اثر انگشت دیجیتال برای چهره
     if face_encodings_list:
-        face_fingerprint = np.mean(face_encodings_list, axis=0)  # میانگین‌گیری از اثر انگشت‌ها
-        print("Face fingerprint created:", face_fingerprint)
-        return face_fingerprint
-    else:
-        print("No faces were detected in the video.")
-        return None
+        face_fingerprint = np.mean(face_encodings_list, axis=0)  # میانگین اثر انگشت چهره‌ها
+        return face_fingerprint.tolist()
+    return None
 
-# 3. تابع برای استخراج صدا و ایجاد اثر انگشت صوتی
-def extract_audio_fingerprint(video_path='user_video.avi', audio_path='user_audio.wav'):
-    # استخراج صوت با استفاده از moviepy
-    video = VideoFileClip(video_path)
-    video.audio.write_audiofile(audio_path)
+# 3. تابع برای استخراج اثر انگشت صوتی
+def extract_audio_fingerprint(audio_path):
+    try:
+        # بارگذاری فایل صوتی
+        y, sr = librosa.load(audio_path, sr=None)  # sr=None برای حفظ نرخ نمونه‌برداری اصلی
+        if len(y) == 0:
+            return None, "Audio is empty"
 
-    # بارگذاری فایل صوتی با librosa
-    y, sr = librosa.load(audio_path)
-    # استخراج ویژگی‌های MFCC
-    mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
-    audio_fingerprint = np.mean(mfccs, axis=1)  # میانگین‌گیری از ویژگی‌ها
+        # بررسی کیفیت صوت (مثلاً سطح انرژی)
+        energy = np.sum(y**2) / len(y)
+        if energy < 1e-4:  # آستانه‌ای برای شناسایی کیفیت پایین
+            return None, "Audio quality is too low"
 
-    print("Audio fingerprint created:", audio_fingerprint)
-    return audio_fingerprint
+        # استخراج ویژگی‌های MFCC
+        mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
+        audio_fingerprint = np.mean(mfccs, axis=1)  # میانگین MFCC
+        return audio_fingerprint.tolist(), None
+    except Exception as e:
+        return None, str(e)
 
-# اجرای تمام مراحل
-if __name__ == "__main__":
-    video_path = 'user_video.avi'  # مسیر فایل ویدیویی
-    audio_path = 'user_audio.wav'   # مسیر فایل صوتی
-    
-    # مرحله 1: ضبط ویدیو
-    record_video(video_path)
+# 4. مسیر API برای دریافت ویدیو و پردازش (استخراج صدا و تصویر)
+@app.route('/process_video', methods=['POST'])
+def upload_video():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No video file provided'}), 400
 
-    # مرحله 2: استخراج اثر انگشت چهره
+    video = request.files['file']
+    if video.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+
+    # ذخیره فایل ویدیو
+    video_path = os.path.join(UPLOAD_FOLDER, video.filename)
+    video.save(video_path)
+
+    # استخراج صدا از ویدیو
+    audio_path = os.path.join(UPLOAD_FOLDER, 'extracted_audio.wav')
+    audio_file = extract_audio_from_video(video_path, audio_path)
+
+    if audio_file is None:
+        os.remove(video_path)
+        return jsonify({'error': 'Failed to extract audio from video'}), 400
+
+    # پردازش اثر انگشت صوتی
+    audio_fingerprint, error = extract_audio_fingerprint(audio_path)
+    if error:
+        os.remove(video_path)
+        os.remove(audio_path)
+        return jsonify({'error': error}), 400
+
+    # پردازش اثر انگشت تصویری
     face_fingerprint = extract_face_encodings(video_path)
+    if not face_fingerprint:
+        os.remove(video_path)
+        os.remove(audio_path)
+        return jsonify({'error': 'No face fingerprint found in the video'}), 400
 
-    # مرحله 3: استخراج اثر انگشت صوتی
-    audio_fingerprint = extract_audio_fingerprint(video_path, audio_path)
+    # پاک کردن فایل‌های موقتی
+    os.remove(video_path)
+    os.remove(audio_path)
+
+    # بازگشت نتایج به فرانت‌اند
+    return jsonify({
+        'face_fingerprint': face_fingerprint,
+        'audio_fingerprint': audio_fingerprint,
+        'message': 'Successfully extracted face and audio fingerprints.'
+    })
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
