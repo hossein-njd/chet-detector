@@ -76,10 +76,12 @@ def extract_audio_fingerprint(audio_path):
 @app.route('/process_video', methods=['POST'])
 def upload_video():
     if 'file' not in request.files:
+        print("No video file provided")
         return jsonify({'error': 'No video file provided'}), 400
 
     video = request.files['file']
     if video.filename == '':
+        print("No selected file")
         return jsonify({'error': 'No selected file'}), 400
 
     # ذخیره فایل ویدیو
@@ -91,12 +93,14 @@ def upload_video():
     audio_file = extract_audio_from_video(video_path, audio_path)
 
     if audio_file is None:
+        print("Failed to extract audio from video")
         os.remove(video_path)
         return jsonify({'error': 'Failed to extract audio from video'}), 400
 
     # پردازش اثر انگشت صوتی
     audio_fingerprint, error = extract_audio_fingerprint(audio_path)
     if error:
+        print("error", error)
         os.remove(video_path)
         os.remove(audio_path)
         return jsonify({'error': error}), 400
@@ -104,6 +108,7 @@ def upload_video():
     # پردازش اثر انگشت تصویری
     face_fingerprint = extract_face_encodings(video_path)
     if not face_fingerprint:
+        print("No face fingerprint found in the video")
         os.remove(video_path)
         os.remove(audio_path)
         return jsonify({'error': 'No face fingerprint found in the video'}), 400
